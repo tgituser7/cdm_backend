@@ -13,7 +13,6 @@ import feedRoutes from "./routes/feeds.js";
 export function createApp() {
   const app = express();
   app.set("trust proxy", 1);
-
   // The website calls the API directly from another origin, with credentials (cookies).
   app.use(cors({ origin: config.clientOrigins, credentials: true }));
   app.use(express.json({ limit: "100kb" }));
