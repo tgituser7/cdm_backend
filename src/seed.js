@@ -46,7 +46,7 @@ const sam = await mk("Sam", "sam@demo.in", "audience", PLACES.mumbai);
 const kavya = await mk("Kavya", "kavya@demo.in", "audience", PLACES.delhi);
 
 const makeFeed = (author, data) => ({ author: author._id, authorName: author.name, ...data });
-const comment = (user, text, h) => ({ user: user._id, userName: user.name, text, createdAt: hoursAgo(h) });
+const thought = (user, text, h) => ({ user: user._id, userName: user.name, text, createdAt: hoursAgo(h) });
 
 const docs = [
   makeFeed(arjun, {
@@ -56,9 +56,9 @@ const docs = [
     location: PLACES.delhi,
     createdAt: hoursAgo(12),
     likes: [rohit._id, meera._id, sam._id, kavya._id],
-    comments: [
-      comment(kavya, "I was there! The whole hall stood up for the final reel. Unforgettable night.", 10),
-      comment(rohit, "A love letter to cinema itself. Please bring it to Bengaluru next!", 2),
+    thoughts: [
+      thought(kavya, "I was there! The whole hall stood up for the final reel. Unforgettable night.", 10),
+      thought(rohit, "A love letter to cinema itself. Please bring it to Bengaluru next!", 2),
     ],
   }),
   makeFeed(anaya, {
@@ -68,14 +68,14 @@ const docs = [
     location: PLACES.udupi,
     createdAt: hoursAgo(30),
     likes: [rohit._id, meera._id, sam._id],
-    comments: [comment(meera, "Anaya Rao never misses. Counting the days to December.", 24)],
+    thoughts: [thought(meera, "Anaya Rao never misses. Counting the days to December.", 24)],
   }),
   makeFeed(anaya, {
-    text: "I'll be at the Bengaluru International Film Festival next weekend, giving a talk on shooting in natural light on a small budget. If you're an aspiring filmmaker, come say hi! Ask your questions in the comments and I'll answer the best ones on stage. 🎤",
+    text: "I'll be at the Bengaluru International Film Festival next weekend, giving a talk on shooting in natural light on a small budget. If you're an aspiring filmmaker, come say hi! Ask your questions in the thoughts and I'll answer the best ones on stage. 🎤",
     location: PLACES.bengaluru,
     createdAt: hoursAgo(50),
     likes: [sam._id, meera._id],
-    comments: [comment(sam, "How do you handle continuity when the light keeps changing through the day?", 46)],
+    thoughts: [thought(sam, "How do you handle continuity when the light keeps changing through the day?", 46)],
   }),
   makeFeed(vikram, {
     filmTitle: "Signal 404",
@@ -84,7 +84,7 @@ const docs = [
     location: PLACES.mumbai,
     createdAt: hoursAgo(72),
     likes: [meera._id, kavya._id],
-    comments: [comment(sam, "Lit only with screens?! That's wild. The colours look incredible.", 70)],
+    thoughts: [thought(sam, "Lit only with screens?! That's wild. The colours look incredible.", 70)],
   }),
   makeFeed(arjun, {
     filmTitle: "The Last Projectionist",

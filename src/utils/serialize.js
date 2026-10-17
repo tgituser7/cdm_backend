@@ -92,7 +92,7 @@ export function serializeFeed(feed, viewer, { movieId } = {}) {
     createdAt: iso(feed.createdAt),
     editedAt: iso(feed.editedAt),
     likes: feed.likes.map((id) => id.toString()),
-    comments: feed.comments.map((c) => ({
+    thoughts: feed.thoughts.map((c) => ({
       id: c._id.toString(),
       userId: c.user.toString(),
       userName: c.userName,

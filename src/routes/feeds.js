@@ -44,10 +44,10 @@ async function output(feed, viewer) {
   return clean(serializeFeed(feed, viewer, { movieId: links.get(feed._id.toString()) }));
 }
 
-/** Likes and comments belong to normal feeds; rating feeds use the movie's ratings and reviews. */
+/** Likes and thoughts belong to normal feeds; rating feeds use the movie's ratings and reviews. */
 function rejectRatingFeed(feed, res) {
   if (feed.type !== "rating") return false;
-  res.status(400).json({ error: "Rating feeds take ratings and reviews instead of likes and comments" });
+  res.status(400).json({ error: "Rating feeds take ratings and reviews instead of likes and thoughts" });
   return true;
 }
 
@@ -213,14 +213,14 @@ router.post("/:id/like", requireRole("audience"), async (req, res) => {
   res.json({ feed: await output(feed, req.user) });
 });
 
-router.post("/:id/comments", requireRole("audience"), async (req, res) => {
+router.post("/:id/thoughts", requireRole("audience"), async (req, res) => {
   const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
-  if (!text) return res.status(400).json({ error: "Comment can't be empty" });
-  if (text.length > 1000) return res.status(400).json({ error: "Comment is too long" });
+  if (!text) return res.status(400).json({ error: "Thought can't be empty" });
+  if (text.length > 1000) return res.status(400).json({ error: "Thought is too long" });
 
   const feed = await findFeed(req, res);
   if (!feed || rejectRatingFeed(feed, res)) return;
-  feed.comments.push({ user: req.user._id, userName: req.user.name, text });
+  feed.thoughts.push({ user: req.user._id, userName: req.user.name, text });
   await feed.save();
   res.status(201).json({ feed: await output(feed, req.user) });
 });

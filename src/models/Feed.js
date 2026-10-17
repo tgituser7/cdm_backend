@@ -3,7 +3,7 @@ import { locationSchema } from "./User.js";
 
 const { ObjectId } = mongoose.Schema.Types;
 
-const commentSchema = new mongoose.Schema(
+const thoughtSchema = new mongoose.Schema(
   {
     user: { type: ObjectId, ref: "User", required: true },
     userName: { type: String, required: true },
@@ -14,7 +14,7 @@ const commentSchema = new mongoose.Schema(
 
 /**
  * A director's feed.
- * - "update": text + optional images, audiences like and comment.
+ * - "update": text + optional images, audiences like and share thoughts.
  * - "rating": created by "Ask For Rating" on a movie, audiences rate and review that movie.
  */
 const feedSchema = new mongoose.Schema(
@@ -29,7 +29,7 @@ const feedSchema = new mongoose.Schema(
     images: { type: [String], default: [] },
     location: { type: locationSchema, default: undefined },
     likes: { type: [{ type: ObjectId, ref: "User" }], default: [] },
-    comments: { type: [commentSchema], default: [] },
+    thoughts: { type: [thoughtSchema], default: [] },
     editedAt: { type: Date },
   },
   { timestamps: true },
