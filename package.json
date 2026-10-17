@@ -1,0 +1,28 @@
+{
+  "name": "dharshak-manch-backend",
+  "version": "1.0.0",
+  "description": "Cinema Dharshak Manch API (Express + MongoDB)",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=.env src/server.js",
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "seed": "node --env-file-if-exists=.env src/seed.js",
+    "seed:movies": "node --env-file-if-exists=.env src/scripts/add-demo-movies.js"
+  },
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "connect-mongo": "^5.1.0",
+    "cors": "^2.8.6",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
+    "express-session": "^1.19.0",
+    "mongoose": "^8.24.5",
+    "multer": "^2.4.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  }
+}
