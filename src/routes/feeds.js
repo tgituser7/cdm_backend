@@ -1,7 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { requireRole } from "../middleware/auth.js";
-import { MAX_IMAGES, removeUploads, uploadImages } from "../middleware/upload.js";
+import { MAX_IMAGES, removeStoredFiles, uploadImages } from "../middleware/upload.js";
 import { Movie } from "../models/Movie.js";
 import { Feed } from "../models/Feed.js";
 import { parseLocation } from "../utils/location.js";
@@ -93,12 +93,12 @@ router.get("/:id", async (req, res) => {
 
 router.post("/", requireRole("director"), uploadImages, async (req, res) => {
   const files = req.files ?? [];
-  const images = files.map((f) => `/uploads/${f.filename}`);
+  const images = files.map((f) => `/res/${f.filename}`);
   const text = typeof req.body.text === "string" ? req.body.text.trim() : "";
   const filmTitle = typeof req.body.filmTitle === "string" ? req.body.filmTitle.trim().slice(0, 120) : "";
 
   if (!text && images.length === 0) {
-    await removeUploads(images);
+    await removeStoredFiles(images);
     return res.status(400).json({ error: "Write something or add an image" });
   }
 
@@ -107,7 +107,7 @@ router.post("/", requireRole("director"), uploadImages, async (req, res) => {
   if (req.body.city) {
     const parsed = parseLocation({ city: req.body.city, state: req.body.state, country: req.body.country });
     if (parsed.error) {
-      await removeUploads(images);
+      await removeStoredFiles(images);
       return res.status(400).json({ error: parsed.error });
     }
     location = parsed.value;
@@ -130,18 +130,18 @@ router.post("/", requireRole("director"), uploadImages, async (req, res) => {
  * images (new files). Omitted fields stay unchanged; images not listed in keepImages are deleted.
  */
 router.patch("/:id", requireRole("director"), uploadImages, async (req, res) => {
-  const added = (req.files ?? []).map((f) => `/uploads/${f.filename}`);
+  const added = (req.files ?? []).map((f) => `/res/${f.filename}`);
   const fail = async (status, error) => {
-    await removeUploads(added);
+    await removeStoredFiles(added);
     return res.status(status).json({ error });
   };
 
   const feed = await findFeed(req, res);
-  if (!feed) return removeUploads(added);
+  if (!feed) return removeStoredFiles(added);
   if (!feed.author.equals(req.user._id)) return fail(403, "You can only edit your own feeds");
 
   if (feed.type === "rating") {
-    if (added.length) await removeUploads(added);
+    if (added.length) await removeStoredFiles(added);
     if (typeof req.body.text === "string") feed.text = req.body.text.trim().slice(0, 1000);
     feed.editedAt = new Date();
     await feed.save();
@@ -181,7 +181,7 @@ router.patch("/:id", requireRole("director"), uploadImages, async (req, res) => 
   feed.images = images;
   feed.editedAt = new Date();
   await feed.save();
-  await removeUploads(removed);
+  await removeStoredFiles(removed);
   res.json({ feed: await output(feed, req.user) });
 });
 
@@ -190,7 +190,7 @@ router.delete("/:id", requireRole("director"), async (req, res) => {
   if (!feed) return;
   if (!feed.author.equals(req.user._id)) return res.status(403).json({ error: "You can only delete your own feeds" });
   await feed.deleteOne();
-  await removeUploads(feed.images);
+  await removeStoredFiles(feed.images);
   if (feed.type === "rating" && feed.movie) {
     // If this was the movie's current rating feed, fall back to its most recent remaining one (or close ratings).
     const movie = await Movie.findById(feed.movie._id);

@@ -29,8 +29,8 @@ await mongoose.connect(config.mongoUri);
 await Promise.all([User.deleteMany({}), Feed.deleteMany({}), Movie.deleteMany({}), mongoose.connection.db.collection("sessions").deleteMany({})]);
 
 // Uploaded images belong to the feeds being deleted.
-for (const f of await fs.readdir(config.uploadsDir)) {
-  if (f !== ".gitkeep") await fs.unlink(path.join(config.uploadsDir, f));
+for (const f of await fs.readdir(config.resDir)) {
+  if (f !== ".gitkeep") await fs.unlink(path.join(config.resDir, f));
 }
 
 const passwordHash = await bcrypt.hash("password123", 12);

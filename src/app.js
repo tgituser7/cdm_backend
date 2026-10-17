@@ -14,8 +14,21 @@ export function createApp() {
   const app = express();
   app.set("trust proxy", 1);
 
-  app.use(cors({ origin: config.clientOrigin, credentials: true }));
+  // The website calls the API directly from another origin, with credentials (cookies).
+  app.use(cors({ origin: config.clientOrigins, credentials: true }));
   app.use(express.json({ limit: "100kb" }));
+
+  // Browsers that block cross-site cookies (Safari/iOS, private windows) send the same signed session
+  // id in an Authorization header instead; treat it exactly like the session cookie.
+  app.use((req, _res, next) => {
+    const auth = req.headers.authorization;
+    const hasCookie = /(?:^|;\s*)cdm\.sid=/.test(req.headers.cookie ?? "");
+    if (!hasCookie && auth?.startsWith("Bearer ")) {
+      const token = auth.slice(7).trim();
+      if (token) req.headers.cookie = [req.headers.cookie, `cdm.sid=${encodeURIComponent(token)}`].filter(Boolean).join("; ");
+    }
+    next();
+  });
 
   // Cookie-based sessions; session data lives in MongoDB's "sessions" collection.
   app.use(
@@ -33,8 +46,8 @@ export function createApp() {
       }),
       cookie: {
         httpOnly: true,
-        sameSite: "lax",
-        secure: config.isProd,
+        sameSite: config.cookieSameSite,
+        secure: config.isProd || config.cookieSameSite === "none",
         maxAge: 30 * 24 * 60 * 60 * 1000,
       },
     }),
@@ -42,7 +55,7 @@ export function createApp() {
 
   app.use(loadUser);
 
-  app.use("/uploads", express.static(config.uploadsDir, { maxAge: "7d", immutable: true }));
+  app.use("/res", express.static(config.resDir, { maxAge: "7d", immutable: true }));
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
   app.use("/api/auth", authRoutes);
   app.use("/api/feeds", feedRoutes);

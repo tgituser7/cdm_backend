@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import { createApp } from "./app.js";
 import { config } from "./config.js";
 
-fs.mkdirSync(config.uploadsDir, { recursive: true });
+fs.mkdirSync(config.resDir, { recursive: true });
 
 await mongoose.connect(config.mongoUri);
 console.log(`MongoDB connected: ${mongoose.connection.name}`);

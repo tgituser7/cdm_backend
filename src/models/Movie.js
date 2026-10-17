@@ -57,7 +57,7 @@ const movieSchema = new mongoose.Schema(
     status: { type: String, enum: STATUSES, default: "Announced" },
     cast: { type: [castSchema], default: [] },
     team: { type: [teamSchema], default: [] },
-    /** "/uploads/<file>" or an absolute URL */
+    /** "/res/<file>" or an absolute URL */
     movieImage: { type: String },
     trailerUrl: { type: String, trim: true, maxlength: 300 },
     /**

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { requireRole } from "../middleware/auth.js";
-import { removeUploads, uploadMovieImage } from "../middleware/upload.js";
+import { removeStoredFiles, uploadMovieImage } from "../middleware/upload.js";
 import { CERTIFICATIONS, Movie, RATING_REQUEST_COOLDOWN_MS, STATUSES } from "../models/Movie.js";
 import { Feed } from "../models/Feed.js";
 import { movieAverage, serializeMovie } from "../utils/serialize.js";
@@ -133,10 +133,10 @@ router.get("/:id", async (req, res) => {
 });
 
 router.post("/", requireRole("director"), uploadMovieImage, async (req, res) => {
-  const movieImage = req.file ? `/uploads/${req.file.filename}` : undefined;
+  const movieImage = req.file ? `/res/${req.file.filename}` : undefined;
   const { out, errors } = readMovieFields({ ...req.body, title: req.body.title ?? "" });
   if (errors.length) {
-    await removeUploads(movieImage ? [movieImage] : []);
+    await removeStoredFiles(movieImage ? [movieImage] : []);
     return res.status(400).json({ error: errors[0] });
   }
   const movie = await Movie.create({ ...out, movieImage, director: req.user._id, directorName: req.user.name });
@@ -144,14 +144,14 @@ router.post("/", requireRole("director"), uploadMovieImage, async (req, res) => 
 });
 
 router.patch("/:id", requireRole("director"), uploadMovieImage, async (req, res) => {
-  const newMovieImage = req.file ? `/uploads/${req.file.filename}` : undefined;
+  const newMovieImage = req.file ? `/res/${req.file.filename}` : undefined;
   const fail = async (status, error) => {
-    await removeUploads(newMovieImage ? [newMovieImage] : []);
+    await removeStoredFiles(newMovieImage ? [newMovieImage] : []);
     return res.status(status).json({ error });
   };
 
   const movie = await findMovie(req, res);
-  if (!movie) return removeUploads(newMovieImage ? [newMovieImage] : []);
+  if (!movie) return removeStoredFiles(newMovieImage ? [newMovieImage] : []);
   if (!movie.director.equals(req.user._id)) return fail(403, "You can only edit your own movies");
 
   const { out, errors } = readMovieFields(req.body);
@@ -162,7 +162,7 @@ router.patch("/:id", requireRole("director"), uploadMovieImage, async (req, res)
   if (newMovieImage) movie.movieImage = newMovieImage;
   else if (req.body.removeMovieImage === "true") movie.movieImage = undefined;
   await movie.save();
-  if (oldMovieImage && oldMovieImage !== movie.movieImage) await removeUploads([oldMovieImage]);
+  if (oldMovieImage && oldMovieImage !== movie.movieImage) await removeStoredFiles([oldMovieImage]);
 
   // Keep the rating feed's film tag in sync with the title.
   if (movie.ratingFeed && out.title) await Feed.updateOne({ _id: movie.ratingFeed }, { filmTitle: movie.title });
@@ -175,7 +175,7 @@ router.delete("/:id", requireRole("director"), async (req, res) => {
   if (!movie.director.equals(req.user._id)) return res.status(403).json({ error: "You can only delete your own movies" });
   await Feed.deleteMany({ movie: movie._id, type: "rating" });
   await movie.deleteOne();
-  if (movie.movieImage) await removeUploads([movie.movieImage]);
+  if (movie.movieImage) await removeStoredFiles([movie.movieImage]);
   res.json({ ok: true });
 });
 

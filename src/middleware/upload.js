@@ -9,7 +9,7 @@ export const MAX_IMAGES = 6;
 const EXT = { "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif" };
 
 const storage = multer.diskStorage({
-  destination: config.uploadsDir,
+  destination: config.resDir,
   filename: (_req, file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(6).toString("hex")}${EXT[file.mimetype]}`),
 });
 
@@ -32,10 +32,10 @@ export const uploadMovieImage = multer({
 }).single("movieImage");
 
 /** Remove stored upload files (ignores external URLs and missing files). */
-export async function removeUploads(urls) {
+export async function removeStoredFiles(urls) {
   await Promise.all(
     urls
-      .filter((u) => u.startsWith("/uploads/"))
-      .map((u) => fs.unlink(path.join(config.uploadsDir, path.basename(u))).catch(() => {})),
+      .filter((u) => u.startsWith("/res/"))
+      .map((u) => fs.unlink(path.join(config.resDir, path.basename(u))).catch(() => {})),
   );
 }

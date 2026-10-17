@@ -25,7 +25,7 @@ const feedSchema = new mongoose.Schema(
     movie: { type: ObjectId, ref: "Movie" },
     filmTitle: { type: String, trim: true, maxlength: 120 },
     text: { type: String, trim: true, maxlength: 5000, default: "" },
-    /** "/uploads/<file>" for stored images, or absolute URLs for seeded ones */
+    /** "/res/<file>" for stored images, or absolute URLs for seeded ones */
     images: { type: [String], default: [] },
     location: { type: locationSchema, default: undefined },
     likes: { type: [{ type: ObjectId, ref: "User" }], default: [] },

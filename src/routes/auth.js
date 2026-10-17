@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
+import signature from "cookie-signature";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { config } from "../config.js";
 import { requireAuth } from "../middleware/auth.js";
 import { User } from "../models/User.js";
 import { parseLocation } from "../utils/location.js";
@@ -13,11 +15,17 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many attempts. Please try again in a few minutes." },
+  // Count attempts per email (and IP). When the website proxies /api, many users share the
+  // proxy's IP, so an IP-only limit would lock everyone out together.
+  keyGenerator: (req) => `${ipKeyGenerator(req.ip ?? "")}|${String(req.body?.email ?? "").trim().toLowerCase()}`,
 });
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MOBILE_RE = /^[+\d][\d\s-]{6,18}$/;
 const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+
+/** The signed session id (same value as the session cookie), for clients that can't keep the cookie. */
+const sessionToken = (req) => `s:${signature.sign(req.sessionID, config.sessionSecret)}`;
 
 /** Start a fresh session for the user (new id prevents session fixation). */
 function startSession(req, user, remember) {
@@ -69,7 +77,7 @@ router.post("/signup", authLimiter, async (req, res) => {
   });
 
   await startSession(req, user, true);
-  res.status(201).json({ user });
+  res.status(201).json({ user, sessionToken: sessionToken(req) });
 });
 
 router.post("/login", authLimiter, async (req, res) => {
@@ -81,13 +89,17 @@ router.post("/login", authLimiter, async (req, res) => {
   if (!ok) return res.status(401).json({ error: "Incorrect email or password" });
 
   await startSession(req, user, remember !== false);
-  res.json({ user });
+  res.json({ user, sessionToken: sessionToken(req) });
 });
 
 router.post("/logout", (req, res, next) => {
   req.session.destroy((err) => {
     if (err) return next(err);
-    res.clearCookie("cdm.sid");
+    res.clearCookie("cdm.sid", {
+      httpOnly: true,
+      sameSite: config.cookieSameSite,
+      secure: config.isProd || config.cookieSameSite === "none",
+    });
     res.json({ ok: true });
   });
 });
