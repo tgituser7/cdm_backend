@@ -107,9 +107,26 @@ function readMovieFields(body) {
   return { out, errors };
 }
 
-/** GET /api/movies?director=<id>|me&sort=top|latest&rated=1&limit=n */
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const one = (v) => (typeof v === "string" ? v.trim() : "");
+
+/**
+ * GET /api/movies — every director's movies, with filters:
+ *   q          search in title / director name
+ *   director   a director id, or "me"
+ *   genre, language, status
+ *   open=1     only movies whose ratings are open
+ *   rated=1    only movies that have ratings
+ *   sort       latest | top | reviews | release | title
+ *   limit      up to 200
+ */
 router.get("/", async (req, res) => {
-  const { director, sort = "latest", rated, limit } = req.query;
+  const { director, sort = "latest", rated, open, limit } = req.query;
+  const q = one(req.query.q).slice(0, 80);
+  const genre = one(req.query.genre);
+  const language = one(req.query.language);
+  const status = one(req.query.status);
+
   const query = {};
   if (director === "me") {
     if (!req.user) return res.json({ movies: [] });
@@ -117,14 +134,46 @@ router.get("/", async (req, res) => {
   } else if (director && mongoose.isValidObjectId(director)) {
     query.director = director;
   }
+  if (q) {
+    const re = new RegExp(escapeRegex(q), "i");
+    query.$or = [{ title: re }, { directorName: re }];
+  }
+  if (genre) query.genres = genre;
+  if (language) query.languages = language;
+  if (STATUSES.includes(status)) query.status = status;
+  if (open === "1") query.ratingFeed = { $exists: true, $ne: null };
   if (rated) query["ratings.0"] = { $exists: true };
 
   let movies = await Movie.find(query).sort({ createdAt: -1 }).limit(200);
-  if (sort === "top") {
-    movies = movies.sort((a, b) => (movieAverage(b) ?? 0) - (movieAverage(a) ?? 0) || b.ratings.length - a.ratings.length);
-  }
+  const comparators = {
+    top: (a, b) => (movieAverage(b) ?? 0) - (movieAverage(a) ?? 0) || b.ratings.length - a.ratings.length,
+    reviews: (a, b) => b.reviews.length - a.reviews.length || b.ratings.length - a.ratings.length,
+    // soonest release first; movies without a date go last
+    release: (a, b) => (a.releaseDate?.getTime() ?? Infinity) - (b.releaseDate?.getTime() ?? Infinity),
+    title: (a, b) => a.title.localeCompare(b.title),
+  };
+  if (comparators[sort]) movies = movies.sort(comparators[sort]);
+
   const n = Math.min(Number(limit) || 200, 200);
   res.json({ movies: movies.slice(0, n).map((m) => serializeMovie(m, req.user)) });
+});
+
+/** GET /api/movies/filters — options for the movie filters (only values that are in use). */
+router.get("/filters", async (_req, res) => {
+  const [genres, languages, directors] = await Promise.all([
+    Movie.distinct("genres"),
+    Movie.distinct("languages"),
+    Movie.aggregate([
+      { $group: { _id: "$director", name: { $first: "$directorName" }, movies: { $sum: 1 } } },
+      { $sort: { name: 1 } },
+    ]),
+  ]);
+  res.json({
+    genres: genres.filter(Boolean).sort(),
+    languages: languages.filter(Boolean).sort(),
+    statuses: STATUSES,
+    directors: directors.map((d) => ({ id: d._id.toString(), name: d.name, movies: d.movies })),
+  });
 });
 
 router.get("/:id", async (req, res) => {
