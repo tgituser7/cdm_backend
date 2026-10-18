@@ -39,7 +39,8 @@ function ratingSummary(movie, viewer) {
   };
 }
 
-export function serializeMovie(movie, viewer) {
+/** Movie fields shared by the full and list versions (works on documents and lean objects). */
+function movieBase(movie) {
   return {
     id: movie._id.toString(),
     directorId: movie.director.toString(),
@@ -47,15 +48,16 @@ export function serializeMovie(movie, viewer) {
     title: movie.title,
     tagline: movie.tagline || undefined,
     synopsis: movie.synopsis || undefined,
-    genres: movie.genres,
-    languages: movie.languages,
+    genres: movie.genres ?? [],
+    languages: movie.languages ?? [],
     releaseDate: iso(movie.releaseDate),
     runtimeMinutes: movie.runtimeMinutes ?? undefined,
     certification: movie.certification || undefined,
     status: movie.status,
-    cast: movie.cast.map((c) => ({ name: c.name, role: c.role || undefined })),
+    cast: (movie.cast ?? []).map((c) => ({ name: c.name, role: c.role || undefined })),
     team: (movie.team ?? []).map((t) => ({ role: t.role, name: t.name })),
     movieImage: movie.movieImage || undefined,
+    bannerImage: movie.bannerImage || undefined,
     trailerUrl: movie.trailerUrl || undefined,
     ratingRequestedAt: iso(movie.ratingRequestedAt),
     ratingRequestCount: movie.ratingRequestCount ?? (movie.ratingRequestedAt ? 1 : 0),
@@ -64,7 +66,30 @@ export function serializeMovie(movie, viewer) {
       ? iso(new Date(movie.ratingRequestedAt.getTime() + RATING_REQUEST_COOLDOWN_MS))
       : undefined,
     createdAt: iso(movie.createdAt),
-    ...ratingSummary(movie, viewer),
+  };
+}
+
+/** Full movie, with the rating summary and all reviews (movie page, rating feeds, mutations). */
+export function serializeMovie(movie, viewer) {
+  return { ...movieBase(movie), ...ratingSummary(movie, viewer) };
+}
+
+/**
+ * Lightweight movie for lists (Movies page, rows, studio): uses the stored counts and average
+ * instead of loading every rating and review.
+ */
+export function serializeMovieSummary(movie) {
+  return {
+    ...movieBase(movie),
+    ratingOpen: !!movie.ratingFeed,
+    ratingFeedId: movie.ratingFeed ? movie.ratingFeed.toString() : null,
+    average: movie.ratingAverage ?? null,
+    ratingCount: movie.ratingCount ?? 0,
+    reviewCount: movie.reviewCount ?? 0,
+    histogram: [],
+    myRating: null,
+    myReviewId: null,
+    reviews: [],
   };
 }
 

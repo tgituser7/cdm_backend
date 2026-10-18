@@ -56,6 +56,11 @@ export function createApp() {
 
   app.use("/res", express.static(config.resDir, { maxAge: "7d", immutable: true }));
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
+  // Called by the service itself (see keepAlive.js) so a free Render instance doesn't go to sleep.
+  app.get("/api/keep-alive", (_req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.json({ ok: true, uptimeSeconds: Math.round(process.uptime()) });
+  });
   app.use("/api/auth", authRoutes);
   app.use("/api/feeds", feedRoutes);
   app.use("/api/movies", movieRoutes);

@@ -59,6 +59,8 @@ const movieSchema = new mongoose.Schema(
     team: { type: [teamSchema], default: [] },
     /** "/res/<file>" or an absolute URL */
     movieImage: { type: String },
+    /** Optional wide (16:9) banner shown in the home page hero and on the movie page; "/res/<file>" or a URL */
+    bannerImage: { type: String },
     trailerUrl: { type: String, trim: true, maxlength: 300 },
     /**
      * The latest rating feed shared via "Ask For Rating"; ratings and reviews are open while one exists.
@@ -69,8 +71,80 @@ const movieSchema = new mongoose.Schema(
     ratingRequestCount: { type: Number, default: 0 },
     ratings: { type: [ratingSchema], default: [] },
     reviews: { type: [reviewSchema], default: [] },
+
+    /*
+     * Derived fields, kept in sync on every save (see the pre-save hook below), so the
+     * movie list can search, filter and sort inside MongoDB using indexes.
+     */
+    /** Lowercase words from the title and director name, for indexed prefix search */
+    searchTerms: { type: [String], default: [] },
+    ratingCount: { type: Number, default: 0 },
+    /** Average rating (1–10), null when unrated */
+    ratingAverage: { type: Number, default: null },
+    reviewCount: { type: Number, default: 0 },
+    ratingOpen: { type: Boolean, default: false },
+    /** releaseDate, or far in the future when unknown — so "release date" sorting puts unknown dates last */
+    releaseSort: { type: Date },
   },
   { timestamps: true },
 );
 
+const NO_RELEASE_DATE = new Date("9999-12-31T00:00:00.000Z");
+
+/** Lowercase words (any script: Latin, Devanagari, Tamil, …) of a text. */
+export function searchWords(text) {
+  return (text ?? "").toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? [];
+}
+
+/** The derived search/sort fields for a movie (document or plain object). */
+function derivedFields(m) {
+  const ratings = m.ratings ?? [];
+  return {
+    searchTerms: [...new Set([...searchWords(m.title), ...searchWords(m.directorName)])],
+    ratingCount: ratings.length,
+    ratingAverage: ratings.length ? ratings.reduce((n, r) => n + r.value, 0) / ratings.length : null,
+    reviewCount: (m.reviews ?? []).length,
+    ratingOpen: !!m.ratingFeed,
+    releaseSort: m.releaseDate ?? NO_RELEASE_DATE,
+  };
+}
+
+movieSchema.pre("save", function syncDerivedFields() {
+  Object.assign(this, derivedFields(this));
+});
+
+// Indexes for the Movies page: search, each filter, and each sort order.
+movieSchema.index({ searchTerms: 1 });
+movieSchema.index({ genres: 1 });
+movieSchema.index({ languages: 1 });
+movieSchema.index({ status: 1 });
+movieSchema.index({ director: 1, createdAt: -1 });
+movieSchema.index({ createdAt: -1 });
+movieSchema.index({ ratingOpen: -1, ratingRequestedAt: -1, createdAt: -1 });
+movieSchema.index({ ratingAverage: -1, ratingCount: -1, createdAt: -1 });
+movieSchema.index({ reviewCount: -1, ratingCount: -1, createdAt: -1 });
+movieSchema.index({ releaseSort: 1, createdAt: -1 });
+movieSchema.index({ title: 1 }, { collation: { locale: "en", strength: 2 } });
+
 export const Movie = mongoose.model("Movie", movieSchema);
+
+/**
+ * Fill the derived fields on movies saved before they existed (runs at startup; a no-op once done).
+ * Uses plain $set updates, so it's safe even if two server processes start at the same time,
+ * and it never stops the server from starting.
+ */
+export async function backfillMovieDerivedFields() {
+  try {
+    // Make the collection's indexes match the ones defined above (adds new, drops outdated).
+    await Movie.syncIndexes();
+    const stale = await Movie.find({ $or: [{ searchTerms: { $exists: false } }, { searchTerms: { $size: 0 } }, { releaseSort: { $exists: false } }] })
+      .select("title directorName ratings reviews ratingFeed releaseDate")
+      .lean();
+    if (!stale.length) return 0;
+    await Movie.bulkWrite(stale.map((m) => ({ updateOne: { filter: { _id: m._id }, update: { $set: derivedFields(m) }, timestamps: false } })));
+    return stale.length;
+  } catch (err) {
+    console.error("Could not update movie search/sort fields:", err.message);
+    return 0;
+  }
+}

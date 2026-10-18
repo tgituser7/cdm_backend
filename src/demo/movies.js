@@ -2,6 +2,7 @@ import { Movie } from "../models/Movie.js";
 import { Feed } from "../models/Feed.js";
 import { User } from "../models/User.js";
 
+const bannerImg = (id) => `https://images.unsplash.com/photo-${id}?w=1920&h=900&q=80&auto=format&fit=crop`;
 const movieImg = (id) => `https://images.unsplash.com/photo-${id}?w=600&h=900&q=80&auto=format&fit=crop`;
 const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000);
 
@@ -26,6 +27,7 @@ const DEMO_MOVIES = [
     ],
     team: [{ role: "Writer", name: "Arjun Menon" }, { role: "Producer", name: "Old City Pictures" }, { role: "Music Director", name: "Rekha Iyer" }, { role: "Cinematographer", name: "Dev Malhotra" }, { role: "Editor", name: "Sana Kapoor" }],
     movieImage: movieImg("1478720568477-152d9b164e26"),
+    bannerImage: bannerImg("1517604931442-7e0c8ed2963c"),
     rating: {
       message: "Our festival cut is locked! 🎞️ If you caught the premiere screening, tell us what you thought: rate it and leave a review.",
       at: 6,
@@ -54,6 +56,7 @@ const DEMO_MOVIES = [
     ],
     team: [{ role: "Writer", name: "Anaya Rao" }, { role: "Producer", name: "Coastline Films" }, { role: "Music Director", name: "Vasuki Rao" }, { role: "Cinematographer", name: "Meghna Kulkarni" }],
     movieImage: movieImg("1524712245354-2c4e5e7121c0"),
+    bannerImage: bannerImg("1515694346937-94d85e41e6f0"),
     rating: {
       message: "The trailer is out and our preview screenings are done. Rate Monsoon Letters and tell us what you felt! 🌧️",
       at: 20,
@@ -79,6 +82,7 @@ const DEMO_MOVIES = [
     ],
     team: [{ role: "Writer", name: "Vikram Sethi" }, { role: "Producer", name: "Static Frame Studios" }, { role: "Music Director", name: "Neel Dsouza" }, { role: "Cinematographer", name: "Arvind Nair" }, { role: "Editor", name: "Pooja Rane" }],
     movieImage: movieImg("1594909122845-11baa439b7bf"),
+    bannerImage: bannerImg("1477959858617-67f85cf4f1df"),
     rating: {
       message: "The teaser is live. Based on what you've seen so far, how excited are you for Signal 404? Rate it and share your theories!",
       at: 40,
@@ -103,6 +107,7 @@ const DEMO_MOVIES = [
     ],
     team: [{ role: "Writer", name: "Anaya Rao" }, { role: "Music Director", name: "G. Senthil" }],
     movieImage: movieImg("1536440136628-849c177e76a1"),
+    bannerImage: bannerImg("1500964757637-c85e8a162699"),
   },
   {
     director: "vikram@demo.in",
@@ -114,6 +119,7 @@ const DEMO_MOVIES = [
     status: "Announced",
     team: [{ role: "Writer", name: "Vikram Sethi" }],
     movieImage: movieImg("1542204165-65bf26472b9b"),
+    bannerImage: bannerImg("1448375240586-882707db888b"),
   },
 ];
 
@@ -121,6 +127,11 @@ const DEMO_MOVIES = [
  * Add the demo movies (and their rating feeds) for whichever demo directors exist.
  * Safe to run more than once: movies that already exist are skipped. Returns the number added.
  */
+/** Banner images for the demo movies, by title (used by scripts/add-demo-banners.js). */
+export const DEMO_BANNERS = Object.fromEntries(
+  DEMO_MOVIES.filter((m) => m.bannerImage).map((m) => [m.title, { director: m.director, bannerImage: m.bannerImage }]),
+);
+
 export async function addDemoMovies() {
   const users = new Map((await User.find({ email: /@demo\.in$/ })).map((u) => [u.email, u]));
   let added = 0;

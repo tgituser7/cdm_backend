@@ -1,10 +1,10 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { requireRole } from "../middleware/auth.js";
-import { removeStoredFiles, uploadMovieImage } from "../middleware/upload.js";
-import { CERTIFICATIONS, Movie, RATING_REQUEST_COOLDOWN_MS, STATUSES } from "../models/Movie.js";
+import { movieImagePaths, removeStoredFiles, uploadMovieImages } from "../middleware/upload.js";
+import { CERTIFICATIONS, Movie, RATING_REQUEST_COOLDOWN_MS, STATUSES, searchWords } from "../models/Movie.js";
 import { Feed } from "../models/Feed.js";
-import { movieAverage, serializeMovie } from "../utils/serialize.js";
+import { serializeMovie, serializeMovieSummary } from "../utils/serialize.js";
 
 const router = Router();
 
@@ -110,52 +110,71 @@ function readMovieFields(body) {
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const one = (v) => (typeof v === "string" ? v.trim() : "");
 
+/** Sort orders for the movie list; each one is backed by an index on the Movie model. */
+const LIST_SORTS = {
+  requested: { ratingOpen: -1, ratingRequestedAt: -1, createdAt: -1 },
+  latest: { createdAt: -1 },
+  top: { ratingAverage: -1, ratingCount: -1, createdAt: -1 },
+  reviews: { reviewCount: -1, ratingCount: -1, createdAt: -1 },
+  release: { releaseSort: 1, createdAt: -1 },
+  title: { title: 1 },
+};
+
 /**
- * GET /api/movies — every director's movies, with filters:
- *   q          search in title / director name
+ * GET /api/movies — every director's movies. Search, filters, sorting and paging all run in MongoDB.
+ *   q          search: every word must start a word of the title or director name ("sig 40" → "Signal 404")
  *   director   a director id, or "me"
  *   genre, language, status
  *   open=1     only movies whose ratings are open
  *   rated=1    only movies that have ratings
- *   sort       latest | top | reviews | release | title
- *   limit      up to 200
+ *   sort       requested | latest | top | reviews | release | title
+ *   page       0-based page (24 per page by default, max 60); without it, up to `limit` (max 200)
  */
 router.get("/", async (req, res) => {
-  const { director, sort = "latest", rated, open, limit } = req.query;
-  const q = one(req.query.q).slice(0, 80);
+  const { director, rated, open } = req.query;
+  const sort = LIST_SORTS[req.query.sort] ? req.query.sort : "latest";
   const genre = one(req.query.genre);
   const language = one(req.query.language);
   const status = one(req.query.status);
+  const words = searchWords(one(req.query.q).slice(0, 80)).slice(0, 6);
 
   const query = {};
   if (director === "me") {
-    if (!req.user) return res.json({ movies: [] });
+    if (!req.user) return res.json({ movies: [], total: 0, page: 0, hasMore: false });
     query.director = req.user._id;
   } else if (director && mongoose.isValidObjectId(director)) {
     query.director = director;
   }
-  if (q) {
-    const re = new RegExp(escapeRegex(q), "i");
-    query.$or = [{ title: re }, { directorName: re }];
-  }
+  // Anchored, case-normalised prefixes can use the searchTerms index.
+  if (words.length) query.searchTerms = { $all: words.map((w) => new RegExp(`^${escapeRegex(w)}`)) };
   if (genre) query.genres = genre;
   if (language) query.languages = language;
   if (STATUSES.includes(status)) query.status = status;
-  if (open === "1") query.ratingFeed = { $exists: true, $ne: null };
-  if (rated) query["ratings.0"] = { $exists: true };
+  if (open === "1") query.ratingOpen = true;
+  if (rated) query.ratingCount = { $gt: 0 };
 
-  let movies = await Movie.find(query).sort({ createdAt: -1 }).limit(200);
-  const comparators = {
-    top: (a, b) => (movieAverage(b) ?? 0) - (movieAverage(a) ?? 0) || b.ratings.length - a.ratings.length,
-    reviews: (a, b) => b.reviews.length - a.reviews.length || b.ratings.length - a.ratings.length,
-    // soonest release first; movies without a date go last
-    release: (a, b) => (a.releaseDate?.getTime() ?? Infinity) - (b.releaseDate?.getTime() ?? Infinity),
-    title: (a, b) => a.title.localeCompare(b.title),
-  };
-  if (comparators[sort]) movies = movies.sort(comparators[sort]);
+  const paged = req.query.page !== undefined;
+  const page = paged ? Math.max(0, Number.parseInt(req.query.page, 10) || 0) : 0;
+  const limit = paged ? Math.min(Math.max(Number(req.query.limit) || 24, 1), 60) : Math.min(Number(req.query.limit) || 200, 200);
 
-  const n = Math.min(Number(limit) || 200, 200);
-  res.json({ movies: movies.slice(0, n).map((m) => serializeMovie(m, req.user)) });
+  const find = Movie.find(query)
+    .select("-ratings -reviews -searchTerms")
+    .sort(LIST_SORTS[sort])
+    .skip(page * limit)
+    .limit(limit)
+    .lean();
+  if (sort === "title") find.collation({ locale: "en", strength: 2 });
+
+  // With no filters, the collection's stored count is instant; otherwise count the matches (indexed).
+  const count = Object.keys(query).length ? Movie.countDocuments(query) : Movie.estimatedDocumentCount();
+  const [docs, total] = await Promise.all([find, count]);
+  res.json({
+    movies: docs.map(serializeMovieSummary),
+    total,
+    page,
+    limit,
+    hasMore: page * limit + docs.length < total,
+  });
 });
 
 /** GET /api/movies/filters — options for the movie filters (only values that are in use). */
@@ -181,37 +200,46 @@ router.get("/:id", async (req, res) => {
   if (movie) res.json({ movie: serializeMovie(movie, req.user) });
 });
 
-router.post("/", requireRole("director"), uploadMovieImage, async (req, res) => {
-  const movieImage = req.file ? `/res/${req.file.filename}` : undefined;
+router.post("/", requireRole("director"), uploadMovieImages, async (req, res) => {
+  const { movieImage, bannerImage } = movieImagePaths(req);
   const { out, errors } = readMovieFields({ ...req.body, title: req.body.title ?? "" });
   if (errors.length) {
-    await removeStoredFiles(movieImage ? [movieImage] : []);
+    await removeStoredFiles([movieImage, bannerImage].filter(Boolean));
     return res.status(400).json({ error: errors[0] });
   }
-  const movie = await Movie.create({ ...out, movieImage, director: req.user._id, directorName: req.user.name });
+  const movie = await Movie.create({ ...out, movieImage, bannerImage, director: req.user._id, directorName: req.user.name });
   res.status(201).json({ movie: serializeMovie(movie, req.user) });
 });
 
-router.patch("/:id", requireRole("director"), uploadMovieImage, async (req, res) => {
-  const newMovieImage = req.file ? `/res/${req.file.filename}` : undefined;
+router.patch("/:id", requireRole("director"), uploadMovieImages, async (req, res) => {
+  const { movieImage: newMovieImage, bannerImage: newBannerImage } = movieImagePaths(req);
+  const added = [newMovieImage, newBannerImage].filter(Boolean);
   const fail = async (status, error) => {
-    await removeStoredFiles(newMovieImage ? [newMovieImage] : []);
+    await removeStoredFiles(added);
     return res.status(status).json({ error });
   };
 
   const movie = await findMovie(req, res);
-  if (!movie) return removeStoredFiles(newMovieImage ? [newMovieImage] : []);
+  if (!movie) return removeStoredFiles(added);
   if (!movie.director.equals(req.user._id)) return fail(403, "You can only edit your own movies");
 
   const { out, errors } = readMovieFields(req.body);
   if (errors.length) return fail(400, errors[0]);
 
-  const oldMovieImage = movie.movieImage;
+  const before = { movieImage: movie.movieImage, bannerImage: movie.bannerImage };
   movie.set(out);
   if (newMovieImage) movie.movieImage = newMovieImage;
   else if (req.body.removeMovieImage === "true") movie.movieImage = undefined;
+  if (newBannerImage) movie.bannerImage = newBannerImage;
+  else if (req.body.removeBannerImage === "true") movie.bannerImage = undefined;
   await movie.save();
-  if (oldMovieImage && oldMovieImage !== movie.movieImage) await removeStoredFiles([oldMovieImage]);
+  // Delete replaced or removed image files.
+  await removeStoredFiles(
+    [
+      before.movieImage !== movie.movieImage && before.movieImage,
+      before.bannerImage !== movie.bannerImage && before.bannerImage,
+    ].filter(Boolean),
+  );
 
   // Keep the rating feed's film tag in sync with the title.
   if (movie.ratingFeed && out.title) await Feed.updateOne({ _id: movie.ratingFeed }, { filmTitle: movie.title });
@@ -224,7 +252,7 @@ router.delete("/:id", requireRole("director"), async (req, res) => {
   if (!movie.director.equals(req.user._id)) return res.status(403).json({ error: "You can only delete your own movies" });
   await Feed.deleteMany({ movie: movie._id, type: "rating" });
   await movie.deleteOne();
-  if (movie.movieImage) await removeStoredFiles([movie.movieImage]);
+  await removeStoredFiles([movie.movieImage, movie.bannerImage].filter(Boolean));
   res.json({ ok: true });
 });
 

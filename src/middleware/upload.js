@@ -22,14 +22,24 @@ export const uploadImages = multer({
   },
 }).array("images", MAX_IMAGES);
 
-export const uploadMovieImage = multer({
+/** A movie's images: the movie image (portrait) and an optional wide banner. */
+export const uploadMovieImages = multer({
   storage,
-  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  limits: { fileSize: 8 * 1024 * 1024, files: 2 },
   fileFilter: (_req, file, cb) => {
     if (EXT[file.mimetype]) cb(null, true);
-    else cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "movieImage"));
+    else cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", file.fieldname));
   },
-}).single("movieImage");
+}).fields([
+  { name: "movieImage", maxCount: 1 },
+  { name: "bannerImage", maxCount: 1 },
+]);
+
+/** Paths of the movie images in a multipart request, e.g. { movieImage: "/res/…", bannerImage: undefined } */
+export function movieImagePaths(req) {
+  const path = (field) => (req.files?.[field]?.[0] ? `/res/${req.files[field][0].filename}` : undefined);
+  return { movieImage: path("movieImage"), bannerImage: path("bannerImage") };
+}
 
 /** Remove stored upload files (ignores external URLs and missing files). */
 export async function removeStoredFiles(urls) {
